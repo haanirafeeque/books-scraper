@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 BASE_URL = "https://books.toscrape.com/"
 CACHE_DIR = Path("cache")
 
-USER_AGENT = "FlyRankInternship-A9/1.0 (+https://github.com/YOUR_USERNAME/YOUR_REPO)"
+USER_AGENT = "FlyRankInternship-A9/1.0 (+https://github.com/haanirafeeque/books-scraper)"
 
 last_request_time = None
 
@@ -18,6 +18,7 @@ def fetch_page(url: str, cache_file: Path) -> str:
     global last_request_time
 
     if cache_file.exists():
+        print(f"CACHE HIT: {cache_file}")
         return cache_file.read_text(encoding="utf-8")
 
 
@@ -32,7 +33,7 @@ def fetch_page(url: str, cache_file: Path) -> str:
     }
 
     last_request_time = monotonic()
-
+    
     response = requests.get(
         url,
         headers=headers,
@@ -46,8 +47,9 @@ def fetch_page(url: str, cache_file: Path) -> str:
 
     html = response.text
 
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.parent.mkdir(parents=True, exist_ok=True)    
     cache_file.write_text(html, encoding="utf-8")
+    print(f"FETCH: {url}")
 
     return html
 
@@ -76,7 +78,7 @@ def discover_pages():
 
         next_link = soup.select_one("li.next a")
 
-        if next_link is None:
+        if next_link is None:   
             break
 
         next_href = next_link.get("href")
