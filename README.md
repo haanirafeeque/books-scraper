@@ -1,33 +1,42 @@
-# Books to Scrape Scraper
+# Books Scraper
 
-## Target classification
+A Python web scraper built as part of the internship assignment using
+Requests, BeautifulSoup, and Pydantic.
+
+## Target Classification
 
 ### Target
 
 Books to Scrape
 
-URL: https://books.toscrape.com/
+https://books.toscrape.com/
 
-### Why this site?
-
-Books to Scrape is a sandbox website designed for practicing
-web scraping. The site explicitly states that it is intended
-for scraping practice, making it an appropriate target for
-this assignment.
+Books to Scrape is a sandbox website designed for practicing web
+scraping.
 
 ### Scope
 
-The initial scraping scope is the first 3 catalogue pages.
+This scraper collects data from the first 3 catalogue pages only.
 
-### Data to collect
+The expected scope is:
 
-- Book title
-- Price
-- Availability
-- Rating
-- Book URL
+- 3 catalogue pages
+- 60 books
 
-### robots.txt check
+### Data Collected
+
+For each book, the scraper collects:
+
+- title
+- product_url
+- price_text
+- availability_text
+- rating_text
+- description
+- source_page
+- fetched_at
+
+### robots.txt
 
 Requested:
 
@@ -35,11 +44,19 @@ https://books.toscrape.com/robots.txt
 
 Result:
 
-Status code: 404
+HTTP 404 Not Found.
 
 No robots.txt file was found at the requested location.
 
-### Responsible scraping
+I will not reuse this code on another site without checking its rules and terms first.
 
-I will not reuse this code on another site without checking its
-rules and terms first.
+---
+
+## Installation
+
+This project uses Python and uv.
+
+Install the dependencies with:
+
+```bash
+uv sync
