@@ -4,6 +4,7 @@ from urllib.parse import urljoin
 from pydantic import BaseModel, HttpUrl
 from datetime import datetime, timezone
 
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -16,47 +17,69 @@ OUTPUT_DIR = Path("output")
 USER_AGENT = "FlyRankInternship-A9/1.0 (+https://github.com/haanirafeeque/books-scraper)"
 
 last_request_time = None
+pages_fetched=0
+cache_hits=0
 
 
 def fetch_page(url: str, cache_file: Path) -> str:
-    global last_request_time
+    global last_request_time, pages_fetched, cache_hits
 
     if cache_file.exists():
-        print(f"CACHE HIT: {cache_file}")
+        cache_hits += 1
         return cache_file.read_text(encoding="utf-8")
-
-
-    if last_request_time is not None:
-        elapsed = monotonic() - last_request_time
-
-        if elapsed < 0.5:
-            sleep(0.5 - elapsed)
 
     headers = {
         "User-Agent": USER_AGENT
     }
 
-    last_request_time = monotonic()
-    
-    response = requests.get(
-        url,
-        headers=headers,
-        timeout=10,
-    )
+    for attempt in range(2):
+        if last_request_time is not None:
+            elapsed = monotonic() - last_request_time
 
-    if response.status_code != 200:
+            if elapsed < 0.5:
+                sleep(0.5 - elapsed)
+
+        last_request_time = monotonic()
+
+        try:
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=10,
+            )
+        except requests.RequestException:
+            if attempt == 0:
+                sleep(1)
+                continue
+
+            raise
+
+        if response.status_code == 200:
+            pages_fetched += 1
+            html = response.content.decode("utf-8")
+
+            cache_file.parent.mkdir(
+                parents=True,
+                exist_ok=True
+            )
+
+            cache_file.write_text(
+                html,
+                encoding="utf-8"
+            )
+
+            return html
+
+        if response.status_code in (500, 502, 503, 504):
+            if attempt == 0:
+                sleep(1)
+                continue
+
         raise RuntimeError(
-            f"Failed to fetch {url}: HTTP {response.status_code}"
+            f"HTTP {response.status_code}: {url}"
         )
 
-    html = response.text
-
-    cache_file.parent.mkdir(parents=True, exist_ok=True)    
-    cache_file.write_text(html, encoding="utf-8")
-    print(f"FETCH: {url}")
-
-    return html
-
+    raise RuntimeError(f"Failed to fetch: {url}")
 
 def discover_pages():
     current_url = BASE_URL
@@ -185,19 +208,38 @@ def normalize_book(record):
     return Book(**record)
 
 def main():
+    start_time = datetime.now(timezone.utc)
+    start = monotonic()
     catalogue_pages, discovered_books, unique_books = discover_pages()
+    unique_books.append({
+    "product_url": "https://books.toscrape.com/catalogue/this-book-does-not-exist_9999/index.html",
+    "source_page": BASE_URL
+    })
+    """
+    checking if the loop contiunues after a broken url and yes the url was given by chatgpt :>"""
 
     print(
         f"catalogue_pages={len(catalogue_pages)}, "
         f"discovered={len(discovered_books)}, "
         f"unique_urls={len(unique_books)}"
     )
-
+    
     records = []
-
+    failed_pages = []
     for book in unique_books:
-        record = extract_book(book)
-        records.append(record)
+        try:
+            record = extract_book(book)
+            records.append(record)
+
+        except Exception as error:
+            failed_pages.append({
+                "url": book["product_url"],
+                "error": str(error)
+            })
+
+            print(
+                f"FAILED: {book['product_url']}"
+            )
 
     good_books = []
     errors = []
@@ -246,6 +288,28 @@ def main():
 
     print(f"Valid books: {len(good_books)}")
     print(f"Errors: {len(errors)}")
+    duration = monotonic() - start
+
+    run_report = {
+    "start_time": start_time.isoformat(),
+    "duration_seconds": round(duration, 2),
+    "pages_fetched": pages_fetched,
+    "cache_hits": cache_hits,
+    "valid_records": len(good_books),
+    "invalid_records": len(errors),
+    "failed_pages": len(failed_pages),
+} 
+
+    with open(
+    OUTPUT_DIR / "run-report.json",
+    "w",
+    encoding="utf-8"
+    ) as file:
+        json.dump(
+        run_report,
+        file,
+        indent=2
+    )
 
 if __name__ == "__main__":
     main()
