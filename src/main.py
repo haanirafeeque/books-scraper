@@ -1,6 +1,7 @@
 from pathlib import Path
 from time import monotonic, sleep
 from urllib.parse import urljoin
+from pydantic import BaseModel, HttpUrl
 from datetime import datetime, timezone
 
 import requests
@@ -9,6 +10,8 @@ from bs4 import BeautifulSoup
 
 BASE_URL = "https://books.toscrape.com/"
 CACHE_DIR = Path("cache")
+OUTPUT_DIR = Path("output")
+
 
 USER_AGENT = "FlyRankInternship-A9/1.0 (+https://github.com/haanirafeeque/books-scraper)"
 
@@ -58,7 +61,7 @@ def fetch_page(url: str, cache_file: Path) -> str:
 def discover_pages():
     current_url = BASE_URL
     catalogue_pages = []
-    all_book = []
+    all_books = []
 
     for page_number in range(1, 4):
         cache_file = CACHE_DIR / f"catalogue-page-{page_number}.html"
@@ -69,17 +72,20 @@ def discover_pages():
 
         catalogue_pages.append(current_url)
 
-
         for book in soup.select("article.product_pod h3 a"):
             href = book.get("href")
 
             if href:
                 absolute_url = urljoin(current_url, href)
-                all_book.append({"product_url":absolute_url,"source_page":page_number})
+
+                all_books.append({
+                    "product_url": absolute_url,
+                    "source_page": current_url
+                })
 
         next_link = soup.select_one("li.next a")
 
-        if next_link is None:   
+        if next_link is None:
             break
 
         next_href = next_link.get("href")
@@ -89,9 +95,12 @@ def discover_pages():
 
         current_url = urljoin(current_url, next_href)
 
-    unique_books = list({book["product_url"]: book for book in all_book}.values())
+    unique_books = list({
+        book["product_url"]: book
+        for book in all_books
+    }.values())
 
-    return catalogue_pages, all_book, unique_books
+    return catalogue_pages, all_books, unique_books
 
 
 
@@ -151,6 +160,30 @@ def extract_book(book):
     }
 
 
+class Book(BaseModel):
+    title: str
+    product_url: HttpUrl
+    price_text: str
+    price_gbp: float
+    availability_text: str
+    rating_text: str | None
+    description: str | None
+    source_page: HttpUrl
+    fetched_at: str
+
+def clean_price(price_text):
+    return float(
+        price_text.replace("Â£", "").replace("£", "").strip()
+    )#Here when converting records i encountered an encoding probem which converts the gbp to Â£ so i replace that do it according to how the encoding is
+
+
+def normalize_book(record):
+    record["price_gbp"] = clean_price(
+        record["price_text"]
+    )
+
+    return Book(**record)
+
 def main():
     catalogue_pages, discovered_books, unique_books = discover_pages()
 
@@ -166,10 +199,53 @@ def main():
         record = extract_book(book)
         records.append(record)
 
-    print("\nFirst raw record:")
-    print(records[0])
+    good_books = []
+    errors = []
 
-    print(f"\ndetail_pages={len(records)}")
+    for record in records:
+        try:
+            book = normalize_book(record)
+            good_books.append(book.model_dump(mode="json"))
+
+        except Exception as error:
+            print("ERROR:", error)
+            errors.append({
+                "record": record,
+                "error": str(error)
+            })
+
+    OUTPUT_DIR.mkdir(exist_ok=True)
+
+    with open(
+        OUTPUT_DIR / "books.json",
+        "w",
+        encoding="utf-8"
+    ) as file:
+        import json
+
+        json.dump(
+            good_books,
+            file,
+            indent=2,
+            ensure_ascii=False
+        )
+
+    with open(
+        OUTPUT_DIR / "errors.json",
+        "w",
+        encoding="utf-8"
+    ) as file:
+        import json
+
+        json.dump(
+            errors,
+            file,
+            indent=2,
+            ensure_ascii=False
+        )
+
+    print(f"Valid books: {len(good_books)}")
+    print(f"Errors: {len(errors)}")
 
 if __name__ == "__main__":
     main()
